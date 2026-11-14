@@ -61,6 +61,119 @@ h1 {
   line-height: 1.45;
 }
 
+.scoreboard {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.65rem;
+  margin: 0 0 1.25rem;
+}
+
+.score-pill {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.75rem 0.95rem;
+  border-radius: 16px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04);
+}
+
+.score-pill span {
+  color: var(--muted);
+  font-size: 0.9rem;
+}
+
+.score-pill strong {
+  font-size: 1.35rem;
+}
+
+.live-score {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin: 0 0 0.85rem;
+  padding: 0.55rem 0.85rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+  color: var(--muted);
+  font-size: 0.92rem;
+}
+
+.live-score em {
+  font-style: normal;
+  color: var(--ink);
+  font-weight: 800;
+  margin-left: 0.25rem;
+}
+
+.players {
+  display: grid;
+  gap: 0.75rem;
+}
+
+.player-field {
+  display: grid;
+  gap: 0.35rem;
+}
+
+.reset-scores {
+  margin-top: 0.85rem;
+  width: 100%;
+}
+
+.duel {
+  display: grid;
+  gap: 0.55rem;
+  margin: 0.65rem 0 0.35rem;
+}
+
+.duel-row {
+  padding: 0.7rem 0.8rem;
+  border-radius: 14px;
+  border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.03);
+}
+
+.duel-row.winner {
+  border-color: rgba(61, 220, 151, 0.55);
+  background: rgba(61, 220, 151, 0.12);
+}
+
+.duel-row.winner .duel-name {
+  color: var(--good);
+  font-weight: 800;
+}
+
+.duel-name {
+  font-weight: 700;
+  margin-bottom: 0.15rem;
+}
+
+.duel-guess {
+  font-size: 1.15rem;
+  font-weight: 700;
+}
+
+.duel-diff {
+  color: var(--muted);
+  font-size: 0.88rem;
+  margin-top: 0.15rem;
+}
+
+.duel-end {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  font-size: 1.35rem !important;
+  font-weight: 700 !important;
+}
+
+.duel-end b {
+  font-size: 1.8rem;
+}
+
 .game-list {
   display: grid;
   gap: 0.85rem;
@@ -81,11 +194,6 @@ h1 {
 }
 
 .game-card:active { transform: scale(0.98); }
-.game-card.disabled {
-  opacity: 0.45;
-  cursor: default;
-}
-
 .game-card strong {
   font-size: 1.15rem;
 }
