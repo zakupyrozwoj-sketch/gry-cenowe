@@ -1,0 +1,71 @@
+<!DOCTYPE html>
+<html lang="pl">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+  <meta name="theme-color" content="#0f1410" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Gry Cenowe</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <main id="screen-home" class="screen active">
+    <div class="brand">Gry produktowe</div>
+    <h1>Odgadnij cenę</h1>
+    <p class="lead">Wybierz grę, zobacz produkt i wpisz ile według Ciebie kosztuje. Potem sprawdzamy wynik.</p>
+    <div id="game-list" class="game-list"></div>
+    <p class="footer-note">6 gier × 5 produktów. Na razie aktywne: Gra 1 i Gra 2 (McDonald's).</p>
+  </main>
+
+  <main id="screen-play" class="screen">
+    <div class="topbar">
+      <button type="button" class="ghost" id="back-home">← Gry</button>
+      <div class="progress" id="progress">1 / 5</div>
+    </div>
+
+    <article class="product-card">
+      <div class="product-image-wrap">
+        <img id="product-image" src="" alt="" />
+      </div>
+      <div class="product-meta">
+        <h2 id="product-name"></h2>
+        <p id="product-hint"></p>
+      </div>
+    </article>
+
+    <div class="guess-box">
+      <label class="label" for="guess-input">Twoja cena</label>
+      <div class="price-row">
+        <input id="guess-input" type="text" inputmode="decimal" placeholder="np. 29,90" autocomplete="off" />
+        <div class="suffix">zł</div>
+      </div>
+      <button type="button" class="primary" id="check-btn">Sprawdź</button>
+      <div class="result" id="result">
+        <div class="label">Prawdziwa cena</div>
+        <div class="actual" id="actual-price"></div>
+        <p class="verdict" id="verdict"></p>
+        <p class="diff" id="diff"></p>
+      </div>
+      <button type="button" class="primary" id="next-btn" hidden>Następny produkt</button>
+    </div>
+  </main>
+
+  <main id="screen-end" class="screen">
+    <div class="brand">Koniec gry</div>
+    <h1 id="end-title">Gra</h1>
+    <div class="summary">
+      <div class="label">Twój wynik</div>
+      <div class="score" id="end-score">0 / 500</div>
+      <ul id="end-list"></ul>
+    </div>
+    <div class="actions">
+      <button type="button" class="primary" id="again-btn">Zagraj jeszcze raz</button>
+      <button type="button" class="ghost" id="home-btn">Wróć do listy gier</button>
+    </div>
+  </main>
+
+  <script src="data.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>
