@@ -5,8 +5,13 @@
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
   <meta name="theme-color" content="#0f1410" />
   <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-title" content="Gry Cenowe" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <meta name="mobile-web-app-capable" content="yes" />
   <title>Gry Cenowe</title>
+  <link rel="manifest" href="manifest.webmanifest" />
+  <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
   <link rel="stylesheet" href="styles.css" />
 </head>
 <body>
@@ -14,6 +19,7 @@
     <div class="brand">Gry produktowe</div>
     <h1>Odgadnij cenę</h1>
     <p class="lead">Wybierz grę. Przy każdym produkcie wpisz cenę Tomka i Karoliny, potem Sprawdź — wygrywa kto bliżej.</p>
+    <p class="install-hint" id="install-hint">Na telefonie: Udostępnij → <strong>Dodaj do ekranu głównego</strong> — wtedy gra działa offline i nie znika.</p>
     <div class="scoreboard" id="home-scoreboard" aria-live="polite">
       <div class="score-pill" data-player="tomek"><span>Tomek</span><strong id="home-tomek">0</strong></div>
       <div class="score-pill" data-player="karolina"><span>Karolina</span><strong id="home-karolina">0</strong></div>

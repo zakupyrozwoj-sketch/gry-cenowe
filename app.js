@@ -41,6 +41,8 @@
     results: [],
     revealed: false,
     gamePoints: { tomek: 0, karolina: 0 },
+    screen: "home",
+    wakeLock: null,
   };
 
   function loadTotals() {
@@ -61,9 +63,45 @@
     localStorage.setItem(STORAGE_KEY, JSON.stringify(totals));
   }
 
+  async function requestWakeLock() {
+    if (!("wakeLock" in navigator)) return;
+    try {
+      if (state.wakeLock) {
+        try {
+          await state.wakeLock.release();
+        } catch (_) {}
+        state.wakeLock = null;
+      }
+      state.wakeLock = await navigator.wakeLock.request("screen");
+      state.wakeLock.addEventListener("release", () => {
+        state.wakeLock = null;
+      });
+    } catch (_) {
+      /* przeglądarka / bateria może odmówić */
+    }
+  }
+
+  async function releaseWakeLock() {
+    if (!state.wakeLock) return;
+    try {
+      await state.wakeLock.release();
+    } catch (_) {}
+    state.wakeLock = null;
+  }
+
+  function syncWakeLock() {
+    if (state.screen === "play" && document.visibilityState === "visible") {
+      requestWakeLock();
+    } else {
+      releaseWakeLock();
+    }
+  }
+
   function show(name) {
     Object.values(screens).forEach((el) => el.classList.remove("active"));
     screens[name].classList.add("active");
+    state.screen = name;
+    syncWakeLock();
   }
 
   function formatPrice(n) {
@@ -298,6 +336,25 @@
   }
   els.guessTomek.addEventListener("keydown", onEnter);
   els.guessKarolina.addEventListener("keydown", onEnter);
+
+  document.addEventListener("visibilitychange", () => {
+    syncWakeLock();
+  });
+
+  if ("serviceWorker" in navigator) {
+    window.addEventListener("load", () => {
+      navigator.serviceWorker.register("./sw.js").catch(() => {});
+    });
+  }
+
+  const installHint = document.getElementById("install-hint");
+  if (
+    installHint &&
+    (window.matchMedia("(display-mode: standalone)").matches ||
+      window.navigator.standalone === true)
+  ) {
+    installHint.hidden = true;
+  }
 
   renderHome();
   show("home");

@@ -16,6 +16,7 @@ const types = {
   ".webp": "image/webp",
   ".ico": "image/x-icon",
   ".json": "application/json; charset=utf-8",
+  ".webmanifest": "application/manifest+json; charset=utf-8",
 };
 
 function safeJoin(base, requestPath) {
