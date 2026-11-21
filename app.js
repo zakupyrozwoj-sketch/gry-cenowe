@@ -577,19 +577,33 @@
     throw new Error("image");
   }
 
+  function scoreMeta(parsed) {
+    if (!parsed) return -1;
+    let score = 0;
+    if (parsed.name) score += 2;
+    if (parsed.image) score += 2;
+    if (parsed.name && parsed.image) score += 1;
+    return score;
+  }
+
   async function fetchProductFromUrl(rawUrl) {
     const pageUrl = normalizeUrl(rawUrl);
     if (!pageUrl) throw new Error("Zły adres URL.");
 
-    const errors = [];
-    let parsed = null;
-    const attempts = [fetchViaJina, fetchViaMicrolink, fetchViaHtmlProxy];
-    for (const attempt of attempts) {
+    // Jina + Microlink równolegle — któryś zwykle złapie og:title / og:image.
+    const settled = await Promise.allSettled([
+      fetchViaJina(pageUrl),
+      fetchViaMicrolink(pageUrl),
+    ]);
+    let parsed = settled
+      .filter((r) => r.status === "fulfilled")
+      .map((r) => r.value)
+      .sort((a, b) => scoreMeta(b) - scoreMeta(a))[0];
+
+    if (!parsed || scoreMeta(parsed) <= 0) {
       try {
-        parsed = await attempt(pageUrl);
-        if (parsed && (parsed.name || parsed.image)) break;
-      } catch (err) {
-        errors.push((err && err.message) || String(err));
+        parsed = await fetchViaHtmlProxy(pageUrl);
+      } catch (_) {
         parsed = null;
       }
     }
