@@ -383,9 +383,33 @@
       .slice(0, 80);
   }
 
+  function isBlockedTitle(name) {
+    const n = String(name || "").toLowerCase();
+    return (
+      !n ||
+      n.includes("just a moment") ||
+      n.includes("access denied") ||
+      n.includes("attention required") ||
+      n.includes("cloudflare") ||
+      n === "error" ||
+      n === "403 forbidden" ||
+      n === "404 not found"
+    );
+  }
+
+  function firstHttpImageFromMarkdown(content) {
+    const text = String(content || "");
+    const re = /!\[[^\]]*\]\((https?:\/\/[^)\s]+)\)/gi;
+    let match;
+    while ((match = re.exec(text))) {
+      const url = match[1];
+      if (!url.startsWith("blob:") && !/\.svg(\?|$)/i.test(url)) return url;
+    }
+    return "";
+  }
+
   function parseProductFromHtml(html, pageUrl) {
     const doc = new DOMParser().parseFromString(html, "text/html");
-    // Najpierw Open Graph / Twitter — to zwykle działa jak podgląd linku w Messengerze.
     let name = metaContent(doc, "og:title") || metaContent(doc, "twitter:title");
     let image =
       metaContent(doc, "og:image") ||
@@ -421,6 +445,7 @@
     }
 
     name = cleanProductName(name);
+    if (isBlockedTitle(name)) name = "";
     image = absoluteUrl(image, pageUrl);
     return {
       name,
@@ -429,31 +454,96 @@
     };
   }
 
-  async function fetchTextViaProxy(targetUrl) {
+  function withTimeout(ms) {
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), ms);
+    return {
+      signal: controller.signal,
+      done() {
+        clearTimeout(timer);
+      },
+    };
+  }
+
+  async function fetchViaJina(pageUrl) {
+    const t = withTimeout(22000);
+    try {
+      const res = await fetch(`https://r.jina.ai/${pageUrl}`, {
+        signal: t.signal,
+        headers: {
+          Accept: "application/json",
+          "X-Return-Format": "markdown",
+        },
+      });
+      if (!res.ok) throw new Error(`Jina HTTP ${res.status}`);
+      const json = await res.json();
+      const data = json.data || json || {};
+      const meta = data.metadata || {};
+      let name = cleanProductName(meta["og:title"] || meta["twitter:title"] || data.title || "");
+      if (isBlockedTitle(name)) name = "";
+      let image =
+        meta["og:image"] ||
+        meta["og:image:url"] ||
+        meta["twitter:image"] ||
+        meta["twitter:image:src"] ||
+        "";
+      if (!image) image = firstHttpImageFromMarkdown(data.content);
+      image = absoluteUrl(image, pageUrl);
+      if (!name && !image) throw new Error("Jina: brak danych");
+      return { name, image, hint: hostHint(pageUrl) };
+    } finally {
+      t.done();
+    }
+  }
+
+  async function fetchViaMicrolink(pageUrl) {
+    const t = withTimeout(22000);
+    try {
+      const res = await fetch(
+        `https://api.microlink.io?url=${encodeURIComponent(pageUrl)}&meta=true`,
+        { signal: t.signal }
+      );
+      if (!res.ok) throw new Error(`Microlink HTTP ${res.status}`);
+      const json = await res.json();
+      if (json.status !== "success" || !json.data) throw new Error("Microlink fail");
+      let name = cleanProductName(json.data.title || "");
+      if (isBlockedTitle(name)) name = "";
+      const image = (json.data.image && json.data.image.url) || "";
+      if (!name && !image) throw new Error("Microlink: brak danych");
+      return { name, image, hint: hostHint(pageUrl) };
+    } finally {
+      t.done();
+    }
+  }
+
+  async function fetchViaHtmlProxy(pageUrl) {
     const builders = [
-      (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
       (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-      (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+      (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
     ];
     let lastError = null;
     for (const build of builders) {
-      const controller = new AbortController();
-      const timer = setTimeout(() => controller.abort(), 18000);
+      const t = withTimeout(16000);
       try {
-        const res = await fetch(build(targetUrl), {
-          signal: controller.signal,
+        const res = await fetch(build(pageUrl), {
+          signal: t.signal,
           headers: { Accept: "text/html,application/xhtml+xml" },
         });
-        clearTimeout(timer);
+        t.done();
         if (!res.ok) {
           lastError = new Error(`HTTP ${res.status}`);
           continue;
         }
         const text = await res.text();
-        if (text && text.length > 200) return text;
-        lastError = new Error("pusta odpowiedź");
+        if (!text || text.length < 200) {
+          lastError = new Error("pusta odpowiedź");
+          continue;
+        }
+        const parsed = parseProductFromHtml(text, pageUrl);
+        if (parsed.name || parsed.image) return parsed;
+        lastError = new Error("brak og:title/image");
       } catch (err) {
-        clearTimeout(timer);
+        t.done();
         lastError = err;
       }
     }
@@ -462,25 +552,26 @@
 
   async function compressImageFromUrl(imageUrl) {
     if (!imageUrl) throw new Error("brak obrazu");
+    const cleaned = String(imageUrl).split("#")[0];
     const builders = [
+      (u) =>
+        `https://wsrv.nl/?url=${encodeURIComponent(u.replace(/^https?:\/\//i, ""))}&w=720&h=720&fit=contain&q=72&output=jpg`,
+      (u) => `https://wsrv.nl/?url=${encodeURIComponent(u)}&w=720&q=72&output=jpg`,
       (u) => u,
-      (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
     ];
     for (const build of builders) {
+      const t = withTimeout(18000);
       try {
-        const res = await fetch(build(imageUrl));
+        const res = await fetch(build(cleaned), { signal: t.signal });
+        t.done();
         if (!res.ok) continue;
         const blob = await res.blob();
-        if (!blob || !(blob.type || "").startsWith("image/")) {
-          if (build === builders[0]) continue;
-        }
-        const file = new File([blob], "product.jpg", {
-          type: blob.type && blob.type.startsWith("image/") ? blob.type : "image/jpeg",
-        });
+        if (!blob || blob.size < 40) continue;
+        const type = (blob.type || "").startsWith("image/") ? blob.type : "image/jpeg";
+        const file = new File([blob], "product.jpg", { type });
         return await compressImage(file);
       } catch (_) {
-        /* try next */
+        t.done();
       }
     }
     throw new Error("image");
@@ -489,23 +580,40 @@
   async function fetchProductFromUrl(rawUrl) {
     const pageUrl = normalizeUrl(rawUrl);
     if (!pageUrl) throw new Error("Zły adres URL.");
-    const html = await fetchTextViaProxy(pageUrl);
-    const parsed = parseProductFromHtml(html, pageUrl);
-    if (!parsed.name && !parsed.image) {
-      throw new Error("Nie udało się odczytać nazwy ani zdjęcia z tej strony.");
+
+    const errors = [];
+    let parsed = null;
+    const attempts = [fetchViaJina, fetchViaMicrolink, fetchViaHtmlProxy];
+    for (const attempt of attempts) {
+      try {
+        parsed = await attempt(pageUrl);
+        if (parsed && (parsed.name || parsed.image)) break;
+      } catch (err) {
+        errors.push((err && err.message) || String(err));
+        parsed = null;
+      }
     }
+
+    if (!parsed || (!parsed.name && !parsed.image)) {
+      throw new Error(
+        "Nie udało się odczytać nazwy/zdjęcia. Sklep może blokować pobieranie (Cloudflare) — wpisz ręcznie albo wgraj zdjęcie."
+      );
+    }
+
     let image = PLACEHOLDER_IMAGE;
     if (parsed.image) {
       try {
         image = await compressImageFromUrl(parsed.image);
       } catch (_) {
+        // Zostaw zdalne URL — i tak pokaże się w <img>, gdy sklep pozwala.
         image = parsed.image;
       }
     }
+
     return {
       name: parsed.name || "",
       image,
-      hint: parsed.hint,
+      hint: parsed.hint || hostHint(pageUrl),
       sourceUrl: pageUrl,
     };
   }
