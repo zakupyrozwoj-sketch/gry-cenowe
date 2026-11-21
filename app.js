@@ -458,8 +458,8 @@
 
   async function fetchTextViaProxy(targetUrl) {
     const builders = [
-      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
       (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
       (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
     ];
     let lastError = null;
@@ -491,15 +491,15 @@
     if (!imageUrl) throw new Error("brak obrazu");
     const builders = [
       (u) => u,
-      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
       (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
     ];
     for (const build of builders) {
       try {
         const res = await fetch(build(imageUrl));
         if (!res.ok) continue;
         const blob = await res.blob();
-        if (!blob || !blob.type.startsWith("image/")) {
+        if (!blob || !(blob.type || "").startsWith("image/")) {
           if (build === builders[0]) continue;
         }
         const file = new File([blob], "product.jpg", {
