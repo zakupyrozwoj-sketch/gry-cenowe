@@ -340,27 +340,6 @@
     return "";
   }
 
-  function pickLdPrice(offers) {
-    if (!offers) return null;
-    const list = Array.isArray(offers) ? offers : [offers];
-    for (const offer of list) {
-      if (!offer || typeof offer !== "object") continue;
-      const direct = offer.price ?? offer.lowPrice ?? offer.highPrice;
-      const parsed = parseGuess(direct);
-      if (parsed !== null) return parsed;
-      if (offer.priceSpecification) {
-        const specs = Array.isArray(offer.priceSpecification)
-          ? offer.priceSpecification
-          : [offer.priceSpecification];
-        for (const spec of specs) {
-          const fromSpec = parseGuess(spec && spec.price);
-          if (fromSpec !== null) return fromSpec;
-        }
-      }
-    }
-    return null;
-  }
-
   function metaContent(doc, key) {
     const el =
       doc.querySelector(`meta[property="${key}"]`) ||
@@ -388,69 +367,45 @@
 
   function parseProductFromHtml(html, pageUrl) {
     const doc = new DOMParser().parseFromString(html, "text/html");
-    let name = "";
-    let price = null;
-    let image = "";
+    // Najpierw Open Graph / Twitter — to zwykle działa jak podgląd linku w Messengerze.
+    let name = metaContent(doc, "og:title") || metaContent(doc, "twitter:title");
+    let image =
+      metaContent(doc, "og:image") ||
+      metaContent(doc, "og:image:url") ||
+      metaContent(doc, "twitter:image") ||
+      metaContent(doc, "twitter:image:src");
 
-    const ldNodes = [];
-    doc.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
-      try {
-        flattenJsonLd(JSON.parse(script.textContent || "null"), ldNodes);
-      } catch (_) {
-        /* ignore bad json-ld */
+    if (!name || !image) {
+      const ldNodes = [];
+      doc.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
+        try {
+          flattenJsonLd(JSON.parse(script.textContent || "null"), ldNodes);
+        } catch (_) {
+          /* ignore bad json-ld */
+        }
+      });
+
+      for (const node of ldNodes) {
+        const types = ldTypes(node);
+        const isProduct =
+          types.some((t) => t.includes("product")) ||
+          (!types.length && (node.offers || node.sku) && node.name);
+        if (!isProduct) continue;
+        if (!name && node.name) name = String(node.name);
+        if (!image) image = pickLdImage(node.image);
+        if (name && image) break;
       }
-    });
-
-    for (const node of ldNodes) {
-      const types = ldTypes(node);
-      const isProduct =
-        types.some((t) => t.includes("product")) ||
-        (!types.length && (node.offers || node.sku) && node.name);
-      if (!isProduct) continue;
-      if (!name && node.name) name = String(node.name);
-      if (!image) image = pickLdImage(node.image);
-      if (price === null) price = pickLdPrice(node.offers);
     }
 
-    if (!name) name = metaContent(doc, "og:title") || metaContent(doc, "twitter:title");
     if (!name) {
       const titleEl = doc.querySelector("title");
       if (titleEl) name = titleEl.textContent || "";
-    }
-    if (!image) {
-      image =
-        metaContent(doc, "og:image") ||
-        metaContent(doc, "og:image:url") ||
-        metaContent(doc, "twitter:image") ||
-        metaContent(doc, "twitter:image:src");
-    }
-    if (price === null) {
-      price =
-        parseGuess(metaContent(doc, "product:price:amount")) ??
-        parseGuess(metaContent(doc, "og:price:amount")) ??
-        parseGuess(metaContent(doc, "price"));
-    }
-    if (price === null) {
-      const priceEl =
-        doc.querySelector('[itemprop="price"]') ||
-        doc.querySelector('meta[itemprop="price"]');
-      if (priceEl) {
-        price = parseGuess(
-          priceEl.getAttribute("content") || priceEl.getAttribute("value") || priceEl.textContent
-        );
-      }
-    }
-    if (price === null) {
-      const bodyText = (doc.body && doc.body.textContent) || "";
-      const match = bodyText.match(/(?:cena|price)[^\d]{0,20}(\d[\d\s]*(?:[.,]\d{1,2})?)\s*(?:zł|PLN)/i);
-      if (match) price = parseGuess(match[1]);
     }
 
     name = cleanProductName(name);
     image = absoluteUrl(image, pageUrl);
     return {
       name,
-      price,
       image,
       hint: hostHint(pageUrl),
     };
@@ -518,8 +473,8 @@
     if (!pageUrl) throw new Error("Zły adres URL.");
     const html = await fetchTextViaProxy(pageUrl);
     const parsed = parseProductFromHtml(html, pageUrl);
-    if (!parsed.name && parsed.price === null && !parsed.image) {
-      throw new Error("Nie udało się odczytać danych z tej strony.");
+    if (!parsed.name && !parsed.image) {
+      throw new Error("Nie udało się odczytać nazwy ani zdjęcia z tej strony.");
     }
     let image = PLACEHOLDER_IMAGE;
     if (parsed.image) {
@@ -531,7 +486,6 @@
     }
     return {
       name: parsed.name || "",
-      price: parsed.price,
       image,
       hint: parsed.hint,
       sourceUrl: pageUrl,
@@ -583,7 +537,7 @@
       const urlInput = document.createElement("input");
       urlInput.type = "url";
       urlInput.inputMode = "url";
-      urlInput.placeholder = "Wklej link do produktu (sklep)";
+      urlInput.placeholder = "Link → wczyta nazwę i zdjęcie";
       urlInput.value = product.sourceUrl || "";
       urlInput.addEventListener("input", () => {
         draft.products[index].sourceUrl = urlInput.value;
@@ -608,7 +562,7 @@
       const priceInput = document.createElement("input");
       priceInput.type = "text";
       priceInput.inputMode = "decimal";
-      priceInput.placeholder = "Cena prawdziwa, np. 29,90";
+      priceInput.placeholder = "Cena (wpisz ręcznie), np. 29,90";
       priceInput.value = product.price;
       priceInput.addEventListener("input", () => {
         draft.products[index].price = priceInput.value;
@@ -676,7 +630,7 @@
         urlInput.disabled = true;
         fetchStatus.hidden = false;
         fetchStatus.className = "url-import-status";
-        fetchStatus.textContent = "Pobieram dane ze sklepu…";
+        fetchStatus.textContent = "Pobieram nazwę i zdjęcie…";
         try {
           const data = await fetchProductFromUrl(raw);
           draft.products[index].sourceUrl = data.sourceUrl;
@@ -685,11 +639,7 @@
             draft.products[index].name = data.name;
             nameInput.value = data.name;
           }
-          if (data.price !== null && data.price !== undefined) {
-            draft.products[index].price = String(data.price).replace(".", ",");
-            priceInput.value = draft.products[index].price;
-          }
-          if (data.hint) {
+          if (data.hint && !String(hintInput.value || "").trim()) {
             draft.products[index].hint = data.hint;
             hintInput.value = data.hint;
           }
@@ -699,14 +649,14 @@
           }
           const missing = [];
           if (!data.name) missing.push("nazwa");
-          if (data.price === null || data.price === undefined) missing.push("cena");
           if (!data.image || data.image === PLACEHOLDER_IMAGE) missing.push("zdjęcie");
           fetchStatus.className = missing.length
             ? "url-import-status warn"
             : "url-import-status ok";
           fetchStatus.textContent = missing.length
-            ? `Częściowo OK — uzupełnij ręcznie: ${missing.join(", ")}.`
-            : "Wczytano nazwę, cenę i zdjęcie.";
+            ? `Częściowo OK — uzupełnij ręcznie: ${missing.join(", ")}. Cenę wpisz zawsze ręcznie.`
+            : "Wczytano nazwę i zdjęcie. Cenę wpisz ręcznie.";
+          priceInput.focus();
         } catch (err) {
           fetchStatus.className = "url-import-status error";
           fetchStatus.textContent =
