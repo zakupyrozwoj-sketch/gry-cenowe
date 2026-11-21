@@ -603,19 +603,52 @@ h1 {
   min-width: 0;
 }
 
-.loaded-name {
-  margin: 0;
-  font-size: 0.95rem;
-  font-weight: 700;
-  line-height: 1.25;
-  color: var(--ink);
-  min-height: 1.25em;
+.name-edit-wrap {
+  display: grid;
+  gap: 0.45rem;
 }
 
-.loaded-name:empty::before {
-  content: "Nazwa pojawi się po Załaduj";
-  color: var(--muted);
-  font-weight: 500;
+.name-edit {
+  width: 100%;
+  min-height: 3.2rem;
+  max-height: 4.2rem;
+  resize: none;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: var(--bg-2);
+  color: var(--ink);
+  border-radius: 14px;
+  padding: 0.85rem 0.95rem;
+  font: inherit;
+  font-size: 1rem;
+  line-height: 1.35;
+  outline: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.name-edit-wrap.expanded .name-edit {
+  max-height: 240px;
+  overflow-y: auto;
+}
+
+.name-edit:focus {
+  border-color: var(--accent);
+}
+
+.name-expand-btn {
+  justify-self: start;
+  min-height: 36px;
+  padding: 0.4rem 0.85rem;
+  font-size: 0.88rem;
+}
+
+.product-preview-meta .url-import {
+  grid-template-columns: 1fr;
+}
+
+.product-preview-meta .url-import .primary {
+  width: 100%;
 }
 
 .photo-actions {

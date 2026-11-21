@@ -380,7 +380,13 @@
       .replace(/\s+/g, " ")
       .replace(/\s*[|\-–—]\s*(Allegro|Amazon|Empik|MediaExpert|OleOle|x-kom|Morele|Reserved|Zalando).*$/i, "")
       .trim()
-      .slice(0, 80);
+      .slice(0, 200);
+  }
+
+  function autosizeNameField(el) {
+    if (!el) return;
+    el.style.height = "auto";
+    el.style.height = `${Math.min(Math.max(el.scrollHeight, 52), 240)}px`;
   }
 
   function isBlockedTitle(name) {
@@ -578,16 +584,25 @@
     const pageUrl = normalizeUrl(rawUrl);
     if (!pageUrl) throw new Error("Zły adres URL.");
 
-    // Cardyb jest najpewniejszy (CORS *). Jina/Microlink jako zapas.
-    const settled = await Promise.allSettled([
-      fetchViaCardyb(pageUrl),
-      fetchViaJina(pageUrl),
-      fetchViaMicrolink(pageUrl),
-    ]);
-    const parsed = settled
-      .filter((r) => r.status === "fulfilled")
-      .map((r) => r.value)
-      .sort((a, b) => scoreMeta(b) - scoreMeta(a))[0];
+    // Stabilna kolejność: Cardyb (działa z GitHub Pages) → dopiero zapas.
+    let parsed = null;
+    try {
+      parsed = await fetchViaCardyb(pageUrl);
+    } catch (_) {
+      parsed = null;
+    }
+
+    if (!parsed || scoreMeta(parsed) < 4) {
+      const settled = await Promise.allSettled([
+        fetchViaJina(pageUrl),
+        fetchViaMicrolink(pageUrl),
+      ]);
+      const fallback = settled
+        .filter((r) => r.status === "fulfilled")
+        .map((r) => r.value)
+        .sort((a, b) => scoreMeta(b) - scoreMeta(a))[0];
+      if (scoreMeta(fallback) > scoreMeta(parsed)) parsed = fallback;
+    }
 
     if (!parsed || (!parsed.name && !parsed.image)) {
       throw new Error(
@@ -669,23 +684,6 @@
 
       const previewMeta = document.createElement("div");
       previewMeta.className = "product-preview-meta";
-      const loadedName = document.createElement("p");
-      loadedName.className = "loaded-name";
-      loadedName.textContent = product.name || "";
-      const nameInput = document.createElement("input");
-      nameInput.type = "text";
-      nameInput.placeholder = "Nazwa produktu";
-      nameInput.maxLength = 80;
-      nameInput.value = product.name;
-      nameInput.addEventListener("input", () => {
-        draft.products[index].name = nameInput.value;
-        loadedName.textContent = nameInput.value;
-      });
-      previewMeta.appendChild(loadedName);
-      previewMeta.appendChild(nameInput);
-      preview.appendChild(thumbBtn);
-      preview.appendChild(previewMeta);
-
       const urlRow = document.createElement("div");
       urlRow.className = "url-import";
       const urlInput = document.createElement("input");
@@ -703,6 +701,48 @@
       const fetchStatus = document.createElement("p");
       fetchStatus.className = "url-import-status";
       fetchStatus.hidden = true;
+      urlRow.appendChild(urlInput);
+      urlRow.appendChild(fetchBtn);
+      previewMeta.appendChild(urlRow);
+      previewMeta.appendChild(fetchStatus);
+      preview.appendChild(thumbBtn);
+      preview.appendChild(previewMeta);
+
+      const nameWrap = document.createElement("div");
+      nameWrap.className = "name-edit-wrap";
+      const nameInput = document.createElement("textarea");
+      nameInput.className = "name-edit";
+      nameInput.rows = 2;
+      nameInput.placeholder = "Nazwa produktu (możesz rozwinąć i edytować całość)";
+      nameInput.maxLength = 200;
+      nameInput.value = product.name || "";
+      const expandBtn = document.createElement("button");
+      expandBtn.type = "button";
+      expandBtn.className = "ghost name-expand-btn";
+      expandBtn.textContent = "Rozwiń pełną nazwę";
+      const syncExpandLabel = () => {
+        expandBtn.textContent = nameWrap.classList.contains("expanded")
+          ? "Zwiń nazwę"
+          : "Rozwiń pełną nazwę";
+      };
+      expandBtn.addEventListener("click", () => {
+        nameWrap.classList.toggle("expanded");
+        syncExpandLabel();
+        autosizeNameField(nameInput);
+        nameInput.focus();
+      });
+      nameInput.addEventListener("input", () => {
+        draft.products[index].name = nameInput.value;
+        autosizeNameField(nameInput);
+      });
+      nameInput.addEventListener("focus", () => {
+        nameWrap.classList.add("expanded");
+        syncExpandLabel();
+        autosizeNameField(nameInput);
+      });
+      nameWrap.appendChild(nameInput);
+      nameWrap.appendChild(expandBtn);
+      requestAnimationFrame(() => autosizeNameField(nameInput));
 
       const priceInput = document.createElement("input");
       priceInput.type = "text";
@@ -776,7 +816,9 @@
           if (data.name) {
             draft.products[index].name = data.name;
             nameInput.value = data.name;
-            loadedName.textContent = data.name;
+            nameWrap.classList.add("expanded");
+            syncExpandLabel();
+            autosizeNameField(nameInput);
           }
           if (data.hint && !String(hintInput.value || "").trim()) {
             draft.products[index].hint = data.hint;
@@ -807,11 +849,8 @@
         }
       });
 
-      urlRow.appendChild(urlInput);
-      urlRow.appendChild(fetchBtn);
       card.appendChild(preview);
-      card.appendChild(urlRow);
-      card.appendChild(fetchStatus);
+      card.appendChild(nameWrap);
       card.appendChild(priceInput);
       card.appendChild(hintInput);
       card.appendChild(actions);
@@ -1157,7 +1196,7 @@
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("./sw.js?v=9")
+        .register("./sw.js?v=10")
         .then((reg) => reg.update())
         .catch(() => {});
     });

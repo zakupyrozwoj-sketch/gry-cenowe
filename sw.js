@@ -1,5 +1,5 @@
 /* Gry Cenowe — offline cache; shell zawsze najpierw z sieci */
-const CACHE = "gry-cenowe-v9";
+const CACHE = "gry-cenowe-v10";
 const SHELL = [
   "./",
   "./index.html",
