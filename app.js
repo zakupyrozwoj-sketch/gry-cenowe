@@ -465,6 +465,27 @@
     };
   }
 
+  async function fetchViaCardyb(pageUrl) {
+    const t = withTimeout(18000);
+    try {
+      const res = await fetch(
+        `https://cardyb.bsky.app/v1/extract?url=${encodeURIComponent(pageUrl)}`,
+        { signal: t.signal }
+      );
+      if (!res.ok) throw new Error(`Cardyb HTTP ${res.status}`);
+      const json = await res.json();
+      if (json.error) throw new Error(String(json.error));
+      let name = cleanProductName(json.title || "");
+      if (isBlockedTitle(name)) name = "";
+      let image = json.image || "";
+      // Cardyb czasem owija obrazek własnym proxy — to OK (CORS).
+      if (!name && !image) throw new Error("Cardyb: brak danych");
+      return { name, image, hint: hostHint(pageUrl) };
+    } finally {
+      t.done();
+    }
+  }
+
   async function fetchViaJina(pageUrl) {
     const t = withTimeout(22000);
     try {
@@ -497,7 +518,7 @@
   }
 
   async function fetchViaMicrolink(pageUrl) {
-    const t = withTimeout(22000);
+    const t = withTimeout(18000);
     try {
       const res = await fetch(
         `https://api.microlink.io?url=${encodeURIComponent(pageUrl)}&meta=true`,
@@ -516,53 +537,20 @@
     }
   }
 
-  async function fetchViaHtmlProxy(pageUrl) {
-    const builders = [
-      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
-      (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
-    ];
-    let lastError = null;
-    for (const build of builders) {
-      const t = withTimeout(16000);
-      try {
-        const res = await fetch(build(pageUrl), {
-          signal: t.signal,
-          headers: { Accept: "text/html,application/xhtml+xml" },
-        });
-        t.done();
-        if (!res.ok) {
-          lastError = new Error(`HTTP ${res.status}`);
-          continue;
-        }
-        const text = await res.text();
-        if (!text || text.length < 200) {
-          lastError = new Error("pusta odpowiedź");
-          continue;
-        }
-        const parsed = parseProductFromHtml(text, pageUrl);
-        if (parsed.name || parsed.image) return parsed;
-        lastError = new Error("brak og:title/image");
-      } catch (err) {
-        t.done();
-        lastError = err;
-      }
-    }
-    throw lastError || new Error("proxy");
-  }
-
   async function compressImageFromUrl(imageUrl) {
     if (!imageUrl) throw new Error("brak obrazu");
     const cleaned = String(imageUrl).split("#")[0];
     const builders = [
+      // Cardyb image proxy / bezpośredni URL obrazka
+      (u) => u,
       (u) =>
         `https://wsrv.nl/?url=${encodeURIComponent(u.replace(/^https?:\/\//i, ""))}&w=720&h=720&fit=contain&q=72&output=jpg`,
       (u) => `https://wsrv.nl/?url=${encodeURIComponent(u)}&w=720&q=72&output=jpg`,
-      (u) => u,
     ];
     for (const build of builders) {
       const t = withTimeout(18000);
       try {
-        const res = await fetch(build(cleaned), { signal: t.signal });
+        const res = await fetch(build(cleaned), { signal: t.signal, mode: "cors" });
         t.done();
         if (!res.ok) continue;
         const blob = await res.blob();
@@ -590,27 +578,20 @@
     const pageUrl = normalizeUrl(rawUrl);
     if (!pageUrl) throw new Error("Zły adres URL.");
 
-    // Jina + Microlink równolegle — któryś zwykle złapie og:title / og:image.
+    // Cardyb jest najpewniejszy (CORS *). Jina/Microlink jako zapas.
     const settled = await Promise.allSettled([
+      fetchViaCardyb(pageUrl),
       fetchViaJina(pageUrl),
       fetchViaMicrolink(pageUrl),
     ]);
-    let parsed = settled
+    const parsed = settled
       .filter((r) => r.status === "fulfilled")
       .map((r) => r.value)
       .sort((a, b) => scoreMeta(b) - scoreMeta(a))[0];
 
-    if (!parsed || scoreMeta(parsed) <= 0) {
-      try {
-        parsed = await fetchViaHtmlProxy(pageUrl);
-      } catch (_) {
-        parsed = null;
-      }
-    }
-
     if (!parsed || (!parsed.name && !parsed.image)) {
       throw new Error(
-        "Nie udało się odczytać nazwy/zdjęcia. Sklep może blokować pobieranie (Cloudflare) — wpisz ręcznie albo wgraj zdjęcie."
+        "Nie udało się odczytać nazwy/zdjęcia. Sklep może blokować pobieranie — wpisz ręcznie albo wgraj zdjęcie z aparatu."
       );
     }
 
@@ -619,7 +600,6 @@
       try {
         image = await compressImageFromUrl(parsed.image);
       } catch (_) {
-        // Zostaw zdalne URL — i tak pokaże się w <img>, gdy sklep pozwala.
         image = parsed.image;
       }
     }
@@ -1176,7 +1156,10 @@
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
-      navigator.serviceWorker.register("./sw.js").catch(() => {});
+      navigator.serviceWorker
+        .register("./sw.js?v=9")
+        .then((reg) => reg.update())
+        .catch(() => {});
     });
   }
 
