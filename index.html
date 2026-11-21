@@ -25,8 +25,50 @@
       <div class="score-pill" data-player="karolina"><span>Karolina</span><strong id="home-karolina">0</strong></div>
     </div>
     <div id="game-list" class="game-list"></div>
-    <p class="footer-note">6 gier × 5 produktów. Punkty zapisują się na tym urządzeniu.</p>
-    <button type="button" class="ghost reset-scores" id="reset-scores">Zeruj punkty</button>
+    <p class="footer-note" id="footer-note">Punkty i własne gry zapisują się na tym urządzeniu.</p>
+    <div class="home-actions">
+      <button type="button" class="primary" id="manage-games-btn">Zarządzaj grami</button>
+      <button type="button" class="ghost reset-scores" id="reset-scores">Zeruj punkty</button>
+    </div>
+  </main>
+
+  <main id="screen-manage" class="screen">
+    <div class="topbar">
+      <button type="button" class="ghost" id="manage-back">← Gry</button>
+      <div class="progress">Zarządzanie</div>
+    </div>
+    <h1 class="manage-title">Twoje gry</h1>
+    <p class="lead manage-lead">Dodawaj nowe albo usuwaj istniejące. Zmiany zostają na tym telefonie.</p>
+    <div id="manage-list" class="manage-list"></div>
+    <div class="actions">
+      <button type="button" class="primary" id="add-game-btn">Dodaj nową grę</button>
+      <button type="button" class="ghost" id="restore-defaults-btn" hidden>Przywróć usunięte gry startowe</button>
+    </div>
+  </main>
+
+  <main id="screen-editor" class="screen">
+    <div class="topbar">
+      <button type="button" class="ghost" id="editor-back">← Anuluj</button>
+      <div class="progress" id="editor-progress">Nowa gra</div>
+    </div>
+    <h1 class="manage-title" id="editor-heading">Nowa gra</h1>
+    <label class="field-block" for="editor-title">
+      <span class="label">Nazwa gry</span>
+      <input id="editor-title" type="text" maxlength="60" placeholder="np. Gra 7 · Żabka" autocomplete="off" />
+    </label>
+    <label class="field-block" for="editor-subtitle">
+      <span class="label">Podtytuł (opcjonalnie)</span>
+      <input id="editor-subtitle" type="text" maxlength="80" placeholder="np. Sklep / kategoria" autocomplete="off" />
+    </label>
+    <div class="products-editor-head">
+      <h2>Produkty</h2>
+      <button type="button" class="ghost" id="add-product-btn">+ Produkt</button>
+    </div>
+    <div id="products-editor" class="products-editor"></div>
+    <p class="editor-hint" id="editor-error" hidden></p>
+    <div class="actions">
+      <button type="button" class="primary" id="save-game-btn">Zapisz grę</button>
+    </div>
   </main>
 
   <main id="screen-play" class="screen">
