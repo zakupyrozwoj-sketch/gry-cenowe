@@ -1,5 +1,5 @@
 /* Gry Cenowe — offline cache, żeby nie znikało bez netu */
-const CACHE = "gry-cenowe-v4";
+const CACHE = "gry-cenowe-v5";
 
 self.addEventListener("install", (event) => {
   event.waitUntil(

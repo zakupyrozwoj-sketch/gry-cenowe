@@ -289,7 +289,253 @@
   }
 
   function blankProduct() {
-    return { name: "", price: "", hint: "", image: PLACEHOLDER_IMAGE };
+    return { name: "", price: "", hint: "", image: PLACEHOLDER_IMAGE, sourceUrl: "" };
+  }
+
+  function normalizeUrl(raw) {
+    const trimmed = String(raw || "").trim();
+    if (!trimmed) return null;
+    try {
+      const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+      const url = new URL(withProtocol);
+      if (url.protocol !== "http:" && url.protocol !== "https:") return null;
+      return url.href;
+    } catch {
+      return null;
+    }
+  }
+
+  function hostHint(pageUrl) {
+    try {
+      return new URL(pageUrl).hostname.replace(/^www\./, "");
+    } catch {
+      return "Link produktu";
+    }
+  }
+
+  function flattenJsonLd(node, out = []) {
+    if (!node) return out;
+    if (Array.isArray(node)) {
+      node.forEach((item) => flattenJsonLd(item, out));
+      return out;
+    }
+    if (typeof node === "object") {
+      out.push(node);
+      if (node["@graph"]) flattenJsonLd(node["@graph"], out);
+    }
+    return out;
+  }
+
+  function ldTypes(node) {
+    const t = node && node["@type"];
+    if (!t) return [];
+    return (Array.isArray(t) ? t : [t]).map((x) => String(x).toLowerCase());
+  }
+
+  function pickLdImage(image) {
+    if (!image) return "";
+    if (typeof image === "string") return image;
+    if (Array.isArray(image)) return pickLdImage(image[0]);
+    if (typeof image === "object") return image.url || image.contentUrl || image["@id"] || "";
+    return "";
+  }
+
+  function pickLdPrice(offers) {
+    if (!offers) return null;
+    const list = Array.isArray(offers) ? offers : [offers];
+    for (const offer of list) {
+      if (!offer || typeof offer !== "object") continue;
+      const direct = offer.price ?? offer.lowPrice ?? offer.highPrice;
+      const parsed = parseGuess(direct);
+      if (parsed !== null) return parsed;
+      if (offer.priceSpecification) {
+        const specs = Array.isArray(offer.priceSpecification)
+          ? offer.priceSpecification
+          : [offer.priceSpecification];
+        for (const spec of specs) {
+          const fromSpec = parseGuess(spec && spec.price);
+          if (fromSpec !== null) return fromSpec;
+        }
+      }
+    }
+    return null;
+  }
+
+  function metaContent(doc, key) {
+    const el =
+      doc.querySelector(`meta[property="${key}"]`) ||
+      doc.querySelector(`meta[name="${key}"]`) ||
+      doc.querySelector(`meta[itemprop="${key}"]`);
+    return el ? (el.getAttribute("content") || "").trim() : "";
+  }
+
+  function absoluteUrl(maybeRelative, baseUrl) {
+    if (!maybeRelative) return "";
+    try {
+      return new URL(maybeRelative, baseUrl).href;
+    } catch {
+      return maybeRelative;
+    }
+  }
+
+  function cleanProductName(name) {
+    return String(name || "")
+      .replace(/\s+/g, " ")
+      .replace(/\s*[|\-–—]\s*(Allegro|Amazon|Empik|MediaExpert|OleOle|x-kom|Morele|Reserved|Zalando).*$/i, "")
+      .trim()
+      .slice(0, 80);
+  }
+
+  function parseProductFromHtml(html, pageUrl) {
+    const doc = new DOMParser().parseFromString(html, "text/html");
+    let name = "";
+    let price = null;
+    let image = "";
+
+    const ldNodes = [];
+    doc.querySelectorAll('script[type="application/ld+json"]').forEach((script) => {
+      try {
+        flattenJsonLd(JSON.parse(script.textContent || "null"), ldNodes);
+      } catch (_) {
+        /* ignore bad json-ld */
+      }
+    });
+
+    for (const node of ldNodes) {
+      const types = ldTypes(node);
+      const isProduct =
+        types.some((t) => t.includes("product")) ||
+        (!types.length && (node.offers || node.sku) && node.name);
+      if (!isProduct) continue;
+      if (!name && node.name) name = String(node.name);
+      if (!image) image = pickLdImage(node.image);
+      if (price === null) price = pickLdPrice(node.offers);
+    }
+
+    if (!name) name = metaContent(doc, "og:title") || metaContent(doc, "twitter:title");
+    if (!name) {
+      const titleEl = doc.querySelector("title");
+      if (titleEl) name = titleEl.textContent || "";
+    }
+    if (!image) {
+      image =
+        metaContent(doc, "og:image") ||
+        metaContent(doc, "og:image:url") ||
+        metaContent(doc, "twitter:image") ||
+        metaContent(doc, "twitter:image:src");
+    }
+    if (price === null) {
+      price =
+        parseGuess(metaContent(doc, "product:price:amount")) ??
+        parseGuess(metaContent(doc, "og:price:amount")) ??
+        parseGuess(metaContent(doc, "price"));
+    }
+    if (price === null) {
+      const priceEl =
+        doc.querySelector('[itemprop="price"]') ||
+        doc.querySelector('meta[itemprop="price"]');
+      if (priceEl) {
+        price = parseGuess(
+          priceEl.getAttribute("content") || priceEl.getAttribute("value") || priceEl.textContent
+        );
+      }
+    }
+    if (price === null) {
+      const bodyText = (doc.body && doc.body.textContent) || "";
+      const match = bodyText.match(/(?:cena|price)[^\d]{0,20}(\d[\d\s]*(?:[.,]\d{1,2})?)\s*(?:zł|PLN)/i);
+      if (match) price = parseGuess(match[1]);
+    }
+
+    name = cleanProductName(name);
+    image = absoluteUrl(image, pageUrl);
+    return {
+      name,
+      price,
+      image,
+      hint: hostHint(pageUrl),
+    };
+  }
+
+  async function fetchTextViaProxy(targetUrl) {
+    const builders = [
+      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+      (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+      (u) => `https://api.codetabs.com/v1/proxy?quest=${encodeURIComponent(u)}`,
+    ];
+    let lastError = null;
+    for (const build of builders) {
+      const controller = new AbortController();
+      const timer = setTimeout(() => controller.abort(), 18000);
+      try {
+        const res = await fetch(build(targetUrl), {
+          signal: controller.signal,
+          headers: { Accept: "text/html,application/xhtml+xml" },
+        });
+        clearTimeout(timer);
+        if (!res.ok) {
+          lastError = new Error(`HTTP ${res.status}`);
+          continue;
+        }
+        const text = await res.text();
+        if (text && text.length > 200) return text;
+        lastError = new Error("pusta odpowiedź");
+      } catch (err) {
+        clearTimeout(timer);
+        lastError = err;
+      }
+    }
+    throw lastError || new Error("proxy");
+  }
+
+  async function compressImageFromUrl(imageUrl) {
+    if (!imageUrl) throw new Error("brak obrazu");
+    const builders = [
+      (u) => u,
+      (u) => `https://api.allorigins.win/raw?url=${encodeURIComponent(u)}`,
+      (u) => `https://corsproxy.io/?${encodeURIComponent(u)}`,
+    ];
+    for (const build of builders) {
+      try {
+        const res = await fetch(build(imageUrl));
+        if (!res.ok) continue;
+        const blob = await res.blob();
+        if (!blob || !blob.type.startsWith("image/")) {
+          if (build === builders[0]) continue;
+        }
+        const file = new File([blob], "product.jpg", {
+          type: blob.type && blob.type.startsWith("image/") ? blob.type : "image/jpeg",
+        });
+        return await compressImage(file);
+      } catch (_) {
+        /* try next */
+      }
+    }
+    throw new Error("image");
+  }
+
+  async function fetchProductFromUrl(rawUrl) {
+    const pageUrl = normalizeUrl(rawUrl);
+    if (!pageUrl) throw new Error("Zły adres URL.");
+    const html = await fetchTextViaProxy(pageUrl);
+    const parsed = parseProductFromHtml(html, pageUrl);
+    if (!parsed.name && parsed.price === null && !parsed.image) {
+      throw new Error("Nie udało się odczytać danych z tej strony.");
+    }
+    let image = PLACEHOLDER_IMAGE;
+    if (parsed.image) {
+      try {
+        image = await compressImageFromUrl(parsed.image);
+      } catch (_) {
+        image = parsed.image;
+      }
+    }
+    return {
+      name: parsed.name || "",
+      price: parsed.price,
+      image,
+      hint: parsed.hint,
+      sourceUrl: pageUrl,
+    };
   }
 
   function openEditor() {
@@ -332,6 +578,24 @@
       }
       card.appendChild(top);
 
+      const urlRow = document.createElement("div");
+      urlRow.className = "url-import";
+      const urlInput = document.createElement("input");
+      urlInput.type = "url";
+      urlInput.inputMode = "url";
+      urlInput.placeholder = "Wklej link do produktu (sklep)";
+      urlInput.value = product.sourceUrl || "";
+      urlInput.addEventListener("input", () => {
+        draft.products[index].sourceUrl = urlInput.value;
+      });
+      const fetchBtn = document.createElement("button");
+      fetchBtn.type = "button";
+      fetchBtn.className = "ghost";
+      fetchBtn.textContent = "Wczytaj";
+      const fetchStatus = document.createElement("p");
+      fetchStatus.className = "url-import-status";
+      fetchStatus.hidden = true;
+
       const nameInput = document.createElement("input");
       nameInput.type = "text";
       nameInput.placeholder = "Nazwa produktu";
@@ -340,7 +604,6 @@
       nameInput.addEventListener("input", () => {
         draft.products[index].name = nameInput.value;
       });
-      card.appendChild(nameInput);
 
       const priceInput = document.createElement("input");
       priceInput.type = "text";
@@ -350,7 +613,6 @@
       priceInput.addEventListener("input", () => {
         draft.products[index].price = priceInput.value;
       });
-      card.appendChild(priceInput);
 
       const hintInput = document.createElement("input");
       hintInput.type = "text";
@@ -360,7 +622,6 @@
       hintInput.addEventListener("input", () => {
         draft.products[index].hint = hintInput.value;
       });
-      card.appendChild(hintInput);
 
       const photo = document.createElement("div");
       photo.className = "product-photo";
@@ -402,6 +663,68 @@
       actions.appendChild(fileInput);
       photo.appendChild(img);
       photo.appendChild(actions);
+
+      fetchBtn.addEventListener("click", async () => {
+        const raw = urlInput.value.trim() || draft.products[index].sourceUrl;
+        if (!raw) {
+          fetchStatus.hidden = false;
+          fetchStatus.className = "url-import-status error";
+          fetchStatus.textContent = "Wklej najpierw link do produktu.";
+          return;
+        }
+        fetchBtn.disabled = true;
+        urlInput.disabled = true;
+        fetchStatus.hidden = false;
+        fetchStatus.className = "url-import-status";
+        fetchStatus.textContent = "Pobieram dane ze sklepu…";
+        try {
+          const data = await fetchProductFromUrl(raw);
+          draft.products[index].sourceUrl = data.sourceUrl;
+          urlInput.value = data.sourceUrl;
+          if (data.name) {
+            draft.products[index].name = data.name;
+            nameInput.value = data.name;
+          }
+          if (data.price !== null && data.price !== undefined) {
+            draft.products[index].price = String(data.price).replace(".", ",");
+            priceInput.value = draft.products[index].price;
+          }
+          if (data.hint) {
+            draft.products[index].hint = data.hint;
+            hintInput.value = data.hint;
+          }
+          if (data.image) {
+            draft.products[index].image = data.image;
+            img.src = data.image;
+          }
+          const missing = [];
+          if (!data.name) missing.push("nazwa");
+          if (data.price === null || data.price === undefined) missing.push("cena");
+          if (!data.image || data.image === PLACEHOLDER_IMAGE) missing.push("zdjęcie");
+          fetchStatus.className = missing.length
+            ? "url-import-status warn"
+            : "url-import-status ok";
+          fetchStatus.textContent = missing.length
+            ? `Częściowo OK — uzupełnij ręcznie: ${missing.join(", ")}.`
+            : "Wczytano nazwę, cenę i zdjęcie.";
+        } catch (err) {
+          fetchStatus.className = "url-import-status error";
+          fetchStatus.textContent =
+            (err && err.message) ||
+            "Nie udało się wczytać. Uzupełnij ręcznie albo spróbuj inny sklep.";
+        } finally {
+          fetchBtn.disabled = false;
+          urlInput.disabled = false;
+        }
+      });
+
+      urlRow.appendChild(urlInput);
+      urlRow.appendChild(fetchBtn);
+      card.appendChild(urlRow);
+      card.appendChild(fetchStatus);
+      card.appendChild(nameInput);
+      card.appendChild(priceInput);
+      card.appendChild(hintInput);
       card.appendChild(photo);
 
       els.productsEditor.appendChild(card);
