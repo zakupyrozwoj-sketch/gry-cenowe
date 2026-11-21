@@ -38,8 +38,12 @@
     editorProgress: document.getElementById("editor-progress"),
     progress: document.getElementById("progress"),
     productImage: document.getElementById("product-image"),
+    productImageBtn: document.getElementById("product-image-btn"),
     productName: document.getElementById("product-name"),
     productHint: document.getElementById("product-hint"),
+    lightbox: document.getElementById("lightbox"),
+    lightboxImage: document.getElementById("lightbox-image"),
+    lightboxClose: document.getElementById("lightbox-close"),
     guessTomek: document.getElementById("guess-tomek"),
     guessKarolina: document.getElementById("guess-karolina"),
     checkBtn: document.getElementById("check-btn"),
@@ -75,6 +79,20 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function openLightbox(src, alt) {
+    if (!src || src === PLACEHOLDER_IMAGE) return;
+    els.lightboxImage.src = src;
+    els.lightboxImage.alt = alt || "Zdjęcie produktu";
+    els.lightbox.hidden = false;
+    document.body.style.overflow = "hidden";
+  }
+
+  function closeLightbox() {
+    els.lightbox.hidden = true;
+    els.lightboxImage.removeAttribute("src");
+    document.body.style.overflow = "";
   }
 
   function loadCatalogMeta() {
@@ -532,24 +550,26 @@
       }
       card.appendChild(top);
 
-      const urlRow = document.createElement("div");
-      urlRow.className = "url-import";
-      const urlInput = document.createElement("input");
-      urlInput.type = "url";
-      urlInput.inputMode = "url";
-      urlInput.placeholder = "Link → wczyta nazwę i zdjęcie";
-      urlInput.value = product.sourceUrl || "";
-      urlInput.addEventListener("input", () => {
-        draft.products[index].sourceUrl = urlInput.value;
-      });
-      const fetchBtn = document.createElement("button");
-      fetchBtn.type = "button";
-      fetchBtn.className = "ghost";
-      fetchBtn.textContent = "Wczytaj";
-      const fetchStatus = document.createElement("p");
-      fetchStatus.className = "url-import-status";
-      fetchStatus.hidden = true;
+      const preview = document.createElement("div");
+      preview.className = "product-preview";
 
+      const thumbBtn = document.createElement("button");
+      thumbBtn.type = "button";
+      thumbBtn.className = "thumb-btn";
+      thumbBtn.setAttribute("aria-label", "Pokaż zdjęcie na pełnym ekranie");
+      const img = document.createElement("img");
+      img.alt = "Miniaturka";
+      img.src = product.image || PLACEHOLDER_IMAGE;
+      thumbBtn.appendChild(img);
+      thumbBtn.addEventListener("click", () => {
+        openLightbox(draft.products[index].image || img.src, draft.products[index].name || "Produkt");
+      });
+
+      const previewMeta = document.createElement("div");
+      previewMeta.className = "product-preview-meta";
+      const loadedName = document.createElement("p");
+      loadedName.className = "loaded-name";
+      loadedName.textContent = product.name || "";
       const nameInput = document.createElement("input");
       nameInput.type = "text";
       nameInput.placeholder = "Nazwa produktu";
@@ -557,7 +577,30 @@
       nameInput.value = product.name;
       nameInput.addEventListener("input", () => {
         draft.products[index].name = nameInput.value;
+        loadedName.textContent = nameInput.value;
       });
+      previewMeta.appendChild(loadedName);
+      previewMeta.appendChild(nameInput);
+      preview.appendChild(thumbBtn);
+      preview.appendChild(previewMeta);
+
+      const urlRow = document.createElement("div");
+      urlRow.className = "url-import";
+      const urlInput = document.createElement("input");
+      urlInput.type = "url";
+      urlInput.inputMode = "url";
+      urlInput.placeholder = "Wklej link do produktu";
+      urlInput.value = product.sourceUrl || "";
+      urlInput.addEventListener("input", () => {
+        draft.products[index].sourceUrl = urlInput.value;
+      });
+      const fetchBtn = document.createElement("button");
+      fetchBtn.type = "button";
+      fetchBtn.className = "primary";
+      fetchBtn.textContent = "Załaduj";
+      const fetchStatus = document.createElement("p");
+      fetchStatus.className = "url-import-status";
+      fetchStatus.hidden = true;
 
       const priceInput = document.createElement("input");
       priceInput.type = "text";
@@ -577,11 +620,6 @@
         draft.products[index].hint = hintInput.value;
       });
 
-      const photo = document.createElement("div");
-      photo.className = "product-photo";
-      const img = document.createElement("img");
-      img.alt = "Podgląd";
-      img.src = product.image || PLACEHOLDER_IMAGE;
       const actions = document.createElement("div");
       actions.className = "photo-actions";
       const fileInput = document.createElement("input");
@@ -615,8 +653,6 @@
       actions.appendChild(pickBtn);
       actions.appendChild(clearBtn);
       actions.appendChild(fileInput);
-      photo.appendChild(img);
-      photo.appendChild(actions);
 
       fetchBtn.addEventListener("click", async () => {
         const raw = urlInput.value.trim() || draft.products[index].sourceUrl;
@@ -630,7 +666,7 @@
         urlInput.disabled = true;
         fetchStatus.hidden = false;
         fetchStatus.className = "url-import-status";
-        fetchStatus.textContent = "Pobieram nazwę i zdjęcie…";
+        fetchStatus.textContent = "Ładuję miniaturkę i nazwę…";
         try {
           const data = await fetchProductFromUrl(raw);
           draft.products[index].sourceUrl = data.sourceUrl;
@@ -638,6 +674,7 @@
           if (data.name) {
             draft.products[index].name = data.name;
             nameInput.value = data.name;
+            loadedName.textContent = data.name;
           }
           if (data.hint && !String(hintInput.value || "").trim()) {
             draft.products[index].hint = data.hint;
@@ -654,14 +691,14 @@
             ? "url-import-status warn"
             : "url-import-status ok";
           fetchStatus.textContent = missing.length
-            ? `Częściowo OK — uzupełnij ręcznie: ${missing.join(", ")}. Cenę wpisz zawsze ręcznie.`
-            : "Wczytano nazwę i zdjęcie. Cenę wpisz ręcznie.";
+            ? `Częściowo OK — uzupełnij: ${missing.join(", ")}. Cenę wpisz ręcznie.`
+            : "Miniaturka i nazwa gotowe. Dotknij zdjęcia na pełny ekran. Cenę wpisz ręcznie.";
           priceInput.focus();
         } catch (err) {
           fetchStatus.className = "url-import-status error";
           fetchStatus.textContent =
             (err && err.message) ||
-            "Nie udało się wczytać. Uzupełnij ręcznie albo spróbuj inny sklep.";
+            "Nie udało się załadować. Uzupełnij ręcznie albo spróbuj inny sklep.";
         } finally {
           fetchBtn.disabled = false;
           urlInput.disabled = false;
@@ -670,12 +707,12 @@
 
       urlRow.appendChild(urlInput);
       urlRow.appendChild(fetchBtn);
+      card.appendChild(preview);
       card.appendChild(urlRow);
       card.appendChild(fetchStatus);
-      card.appendChild(nameInput);
       card.appendChild(priceInput);
       card.appendChild(hintInput);
-      card.appendChild(photo);
+      card.appendChild(actions);
 
       els.productsEditor.appendChild(card);
     });
@@ -984,6 +1021,19 @@
   document.getElementById("restore-defaults-btn").addEventListener("click", () => {
     if (!confirm("Przywrócić usunięte gry startowe?")) return;
     restoreDefaults();
+  });
+
+  if (els.productImageBtn) {
+    els.productImageBtn.addEventListener("click", () => {
+      openLightbox(els.productImage.src, els.productName.textContent || "Produkt");
+    });
+  }
+  els.lightboxClose.addEventListener("click", closeLightbox);
+  els.lightbox.addEventListener("click", (e) => {
+    if (e.target === els.lightbox) closeLightbox();
+  });
+  document.addEventListener("keydown", (e) => {
+    if (e.key === "Escape" && !els.lightbox.hidden) closeLightbox();
   });
 
   els.checkBtn.addEventListener("click", reveal);
