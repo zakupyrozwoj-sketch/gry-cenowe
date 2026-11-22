@@ -1,10 +1,11 @@
 (function () {
-  const PLAYERS = [
+  const DEFAULT_PLAYERS = [
     { id: "tomek", name: "Tomek" },
     { id: "karolina", name: "Karolina" },
   ];
   const STORAGE_KEY = "gry-cenowe-scores-v1";
   const CATALOG_KEY = "gry-cenowe-catalog-v1";
+  const PLAYERS_KEY = "gry-cenowe-players-v1";
   const PLACEHOLDER_IMAGE =
     "data:image/svg+xml," +
     encodeURIComponent(
@@ -23,6 +24,7 @@
     end: document.getElementById("screen-end"),
     manage: document.getElementById("screen-manage"),
     editor: document.getElementById("screen-editor"),
+    players: document.getElementById("screen-players"),
   };
 
   const els = {
@@ -79,6 +81,120 @@
       .replace(/</g, "&lt;")
       .replace(/>/g, "&gt;")
       .replace(/"/g, "&quot;");
+  }
+
+  function sanitizePlayerName(raw, fallback) {
+    const cleaned = String(raw || "")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 24);
+    return cleaned || fallback;
+  }
+
+  function loadPlayers() {
+    try {
+      const raw = localStorage.getItem(PLAYERS_KEY);
+      if (!raw) {
+        return DEFAULT_PLAYERS.map((p) => ({ id: p.id, name: p.name }));
+      }
+      const parsed = JSON.parse(raw);
+      const byId = {};
+      if (Array.isArray(parsed)) {
+        parsed.forEach((p) => {
+          if (p && p.id) byId[p.id] = p.name;
+        });
+      } else if (parsed && typeof parsed === "object") {
+        byId.tomek = parsed.tomek;
+        byId.karolina = parsed.karolina;
+      }
+      return DEFAULT_PLAYERS.map((p) => ({
+        id: p.id,
+        name: sanitizePlayerName(byId[p.id], p.name),
+      }));
+    } catch {
+      return DEFAULT_PLAYERS.map((p) => ({ id: p.id, name: p.name }));
+    }
+  }
+
+  function savePlayers(players) {
+    localStorage.setItem(
+      PLAYERS_KEY,
+      JSON.stringify(
+        players.map((p) => ({
+          id: p.id,
+          name: sanitizePlayerName(p.name, p.id === "tomek" ? "Tomek" : "Karolina"),
+        }))
+      )
+    );
+  }
+
+  function getPlayers() {
+    return loadPlayers();
+  }
+
+  function playerName(id) {
+    const found = getPlayers().find((p) => p.id === id);
+    return found ? found.name : id;
+  }
+
+  function playerShort(id) {
+    const name = playerName(id);
+    return name.slice(0, 1).toUpperCase();
+  }
+
+  function applyPlayerLabels() {
+    const players = getPlayers();
+    const a = players[0];
+    const b = players[1];
+    const setText = (id, text) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = text;
+    };
+    setText("home-name-tomek", a.name);
+    setText("home-name-karolina", b.name);
+    setText("live-name-tomek", a.name);
+    setText("live-name-karolina", b.name);
+    setText("guess-label-tomek", a.name);
+    setText("guess-label-karolina", b.name);
+    const lead = document.getElementById("home-lead");
+    if (lead) {
+      lead.textContent = `Wybierz grę. Przy każdym produkcie wpisz cenę ${a.name} i ${b.name}, potem Sprawdź — wygrywa kto bliżej.`;
+    }
+  }
+
+  function openPlayersScreen() {
+    const players = getPlayers();
+    document.getElementById("player-name-tomek").value = players[0].name;
+    document.getElementById("player-name-karolina").value = players[1].name;
+    const err = document.getElementById("players-error");
+    err.hidden = true;
+    err.textContent = "";
+    show("players");
+  }
+
+  function savePlayersFromForm() {
+    const nameA = sanitizePlayerName(
+      document.getElementById("player-name-tomek").value,
+      ""
+    );
+    const nameB = sanitizePlayerName(
+      document.getElementById("player-name-karolina").value,
+      ""
+    );
+    const err = document.getElementById("players-error");
+    if (!nameA || !nameB) {
+      err.hidden = false;
+      err.textContent = "Podaj oba imiona.";
+      return;
+    }
+    savePlayers([
+      { id: "tomek", name: nameA },
+      { id: "karolina", name: nameB },
+    ]);
+    applyPlayerLabels();
+    refreshScoreDisplays();
+    renderHome();
+    show("home");
   }
 
   function openLightbox(src, alt) {
@@ -1046,21 +1162,22 @@
     };
 
     els.actualPrice.textContent = formatPrice(actual);
-    els.duel.innerHTML = PLAYERS.map((p) => {
-      const row = state.results[state.index][p.id];
-      const isWin = winner === "remis" || winner === p.id;
-      return `<div class="duel-row ${isWin ? "winner" : ""}">
-        <div class="duel-name">${p.name}${isWin ? " · bliżej" : ""}</div>
+    els.duel.innerHTML = getPlayers()
+      .map((p) => {
+        const row = state.results[state.index][p.id];
+        const isWin = winner === "remis" || winner === p.id;
+        return `<div class="duel-row ${isWin ? "winner" : ""}">
+        <div class="duel-name">${escapeHtml(p.name)}${isWin ? " · bliżej" : ""}</div>
         <div class="duel-guess">${formatPrice(row.guess)}</div>
         <div class="duel-diff">różnica ${formatPrice(row.diff)}${row.points ? ` · +${row.points} pkt` : ""}</div>
       </div>`;
-    }).join("");
+      })
+      .join("");
 
     if (winner === "remis") {
       els.diff.textContent = "Remis — oboje dostają punkt.";
     } else {
-      const w = PLAYERS.find((p) => p.id === winner);
-      els.diff.textContent = `${w.name} był(a) bliżej i dostaje 1 punkt.`;
+      els.diff.textContent = `${playerName(winner)} był(a) bliżej i dostaje 1 punkt.`;
     }
 
     els.result.classList.add("show");
@@ -1085,16 +1202,20 @@
   function renderEnd() {
     const t = state.gamePoints.tomek;
     const k = state.gamePoints.karolina;
+    const nameA = playerName("tomek");
+    const nameB = playerName("karolina");
+    const shortA = playerShort("tomek");
+    const shortB = playerShort("karolina");
     els.endTitle.textContent = state.game.title;
-    els.endScore.innerHTML = `<span>Tomek <b>${t}</b></span><span>Karolina <b>${k}</b></span>`;
+    els.endScore.innerHTML = `<span>${escapeHtml(nameA)} <b>${t}</b></span><span>${escapeHtml(nameB)} <b>${k}</b></span>`;
     if (t === k) {
       els.endVerdict.textContent = "Remis w tej grze!";
       els.endVerdict.className = "verdict ok";
     } else if (t > k) {
-      els.endVerdict.textContent = "Wygrywa Tomek!";
+      els.endVerdict.textContent = `Wygrywa ${nameA}!`;
       els.endVerdict.className = "verdict good";
     } else {
-      els.endVerdict.textContent = "Wygrywa Karolina!";
+      els.endVerdict.textContent = `Wygrywa ${nameB}!`;
       els.endVerdict.className = "verdict good";
     }
 
@@ -1104,13 +1225,13 @@
           r.winner === "remis"
             ? "remis"
             : r.winner === "tomek"
-              ? "Tomek"
-              : "Karolina";
+              ? nameA
+              : nameB;
         return `<li>
           <span class="name">${escapeHtml(r.name)}<br>
-            T: ${formatPrice(r.tomek.guess)} · K: ${formatPrice(r.karolina.guess)} → ${formatPrice(r.actual)}
+            ${escapeHtml(shortA)}: ${formatPrice(r.tomek.guess)} · ${escapeHtml(shortB)}: ${formatPrice(r.karolina.guess)} → ${formatPrice(r.actual)}
           </span>
-          <span class="pts">${mark}</span>
+          <span class="pts">${escapeHtml(mark)}</span>
         </li>`;
       })
       .join("");
@@ -1141,6 +1262,16 @@
   document.getElementById("manage-back").addEventListener("click", () => {
     renderHome();
     show("home");
+  });
+  document.getElementById("players-btn").addEventListener("click", openPlayersScreen);
+  document.getElementById("players-back").addEventListener("click", () => {
+    renderHome();
+    show("home");
+  });
+  document.getElementById("players-save").addEventListener("click", savePlayersFromForm);
+  document.getElementById("players-reset").addEventListener("click", () => {
+    document.getElementById("player-name-tomek").value = DEFAULT_PLAYERS[0].name;
+    document.getElementById("player-name-karolina").value = DEFAULT_PLAYERS[1].name;
   });
   document.getElementById("add-game-btn").addEventListener("click", openEditor);
   document.getElementById("editor-back").addEventListener("click", () => {
@@ -1196,7 +1327,7 @@
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
       navigator.serviceWorker
-        .register("./sw.js?v=10")
+        .register("./sw.js?v=11")
         .then((reg) => reg.update())
         .catch(() => {});
     });
@@ -1211,6 +1342,7 @@
     installHint.hidden = true;
   }
 
+  applyPlayerLabels();
   renderHome();
   show("home");
 })();

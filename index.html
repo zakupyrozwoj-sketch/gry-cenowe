@@ -12,23 +12,46 @@
   <link rel="manifest" href="manifest.webmanifest" />
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png" />
   <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png" />
-  <link rel="stylesheet" href="styles.css?v=10" />
+  <link rel="stylesheet" href="styles.css?v=11" />
 </head>
 <body>
   <main id="screen-home" class="screen active">
     <div class="brand">Gry produktowe</div>
     <h1>Odgadnij cenę</h1>
-    <p class="lead">Wybierz grę. Przy każdym produkcie wpisz cenę Tomka i Karoliny, potem Sprawdź — wygrywa kto bliżej.</p>
+    <p class="lead" id="home-lead">Wybierz grę. Przy każdym produkcie wpisz cenę graczy, potem Sprawdź — wygrywa kto bliżej.</p>
     <p class="install-hint" id="install-hint">Na telefonie: Udostępnij → <strong>Dodaj do ekranu głównego</strong> — wtedy gra działa offline i nie znika.</p>
     <div class="scoreboard" id="home-scoreboard" aria-live="polite">
-      <div class="score-pill" data-player="tomek"><span>Tomek</span><strong id="home-tomek">0</strong></div>
-      <div class="score-pill" data-player="karolina"><span>Karolina</span><strong id="home-karolina">0</strong></div>
+      <div class="score-pill" data-player="tomek"><span id="home-name-tomek">Tomek</span><strong id="home-tomek">0</strong></div>
+      <div class="score-pill" data-player="karolina"><span id="home-name-karolina">Karolina</span><strong id="home-karolina">0</strong></div>
     </div>
     <div id="game-list" class="game-list"></div>
     <p class="footer-note" id="footer-note">Punkty i własne gry zapisują się na tym urządzeniu.</p>
     <div class="home-actions">
       <button type="button" class="primary" id="manage-games-btn">Zarządzaj grami</button>
+      <button type="button" class="ghost" id="players-btn">Imiona graczy</button>
       <button type="button" class="ghost reset-scores" id="reset-scores">Zeruj punkty</button>
+    </div>
+  </main>
+
+  <main id="screen-players" class="screen">
+    <div class="topbar">
+      <button type="button" class="ghost" id="players-back">← Gry</button>
+      <div class="progress">Gracze</div>
+    </div>
+    <h1 class="manage-title">Imiona graczy</h1>
+    <p class="lead manage-lead">Zmień nazwy wyświetlane w grze i na punktacji. Zapisze się na tym telefonie.</p>
+    <label class="field-block" for="player-name-tomek">
+      <span class="label">Gracz 1</span>
+      <input id="player-name-tomek" type="text" maxlength="24" placeholder="np. Tomek" autocomplete="off" />
+    </label>
+    <label class="field-block" for="player-name-karolina">
+      <span class="label">Gracz 2</span>
+      <input id="player-name-karolina" type="text" maxlength="24" placeholder="np. Karolina" autocomplete="off" />
+    </label>
+    <p class="editor-hint" id="players-error" hidden></p>
+    <div class="actions">
+      <button type="button" class="primary" id="players-save">Zapisz imiona</button>
+      <button type="button" class="ghost" id="players-reset">Przywróć Tomek / Karolina</button>
     </div>
   </main>
 
@@ -79,8 +102,8 @@
     </div>
 
     <div class="live-score" id="live-score">
-      <span><b>Tomek</b> <em id="live-tomek">0</em></span>
-      <span><b>Karolina</b> <em id="live-karolina">0</em></span>
+      <span><b id="live-name-tomek">Tomek</b> <em id="live-tomek">0</em></span>
+      <span><b id="live-name-karolina">Karolina</b> <em id="live-karolina">0</em></span>
     </div>
 
     <article class="product-card">
@@ -96,14 +119,14 @@
     <div class="guess-box">
       <div class="players">
         <label class="player-field" for="guess-tomek">
-          <span class="label">Tomek</span>
+          <span class="label" id="guess-label-tomek">Tomek</span>
           <div class="price-row">
             <input id="guess-tomek" type="text" inputmode="decimal" placeholder="np. 29,90" autocomplete="off" />
             <div class="suffix">zł</div>
           </div>
         </label>
         <label class="player-field" for="guess-karolina">
-          <span class="label">Karolina</span>
+          <span class="label" id="guess-label-karolina">Karolina</span>
           <div class="price-row">
             <input id="guess-karolina" type="text" inputmode="decimal" placeholder="np. 29,90" autocomplete="off" />
             <div class="suffix">zł</div>
@@ -144,7 +167,7 @@
     <img id="lightbox-image" src="" alt="" />
   </div>
 
-  <script src="data.js?v=10"></script>
-  <script src="app.js?v=10"></script>
+  <script src="data.js?v=11"></script>
+  <script src="app.js?v=11"></script>
 </body>
 </html>

@@ -1,7 +1,7 @@
 {
   "name": "Gry Cenowe",
   "short_name": "Gry Cenowe",
-  "description": "Odgadnij cenę — Tomek vs Karolina",
+  "description": "Odgadnij cenę — gra dla dwojga",
   "start_url": "./index.html",
   "scope": "./",
   "display": "standalone",
